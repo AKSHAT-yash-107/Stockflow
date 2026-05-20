@@ -96,7 +96,7 @@ Highest: ICICIBANK.NS moved 10.85% in a single day (zscore: 8.34).
 |--------|-------|
 | Stocks tracked | 17 NSE stocks |
 | Time period | 5 years |
-| Silver rows | ← YOU FILL THIS |
+| Silver rows | ← 21029 |
 | Anomaly days detected | 258 |
 | Gold metrics computed | Daily return, SMA7, SMA30, Volatility, Correlation |
 
