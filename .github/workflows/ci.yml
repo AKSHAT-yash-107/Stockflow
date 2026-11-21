@@ -9,6 +9,27 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: stockflow
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d stockflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGDATABASE: stockflow
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      STOCKFLOW_TEST_POSTGRES: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -23,5 +44,5 @@ jobs:
           pip install -r requirements.txt
       - name: Compile Python modules
         run: python -m compileall -q scripts tests
-      - name: Run unit tests
+      - name: Run unit and PostgreSQL integration tests
         run: python -m pytest -q
