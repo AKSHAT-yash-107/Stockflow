@@ -1,4 +1,4 @@
-"""Fetch daily OHLCV data and append raw ticker/date records to Bronze."""
+"""Fetch daily OHLCV data and upsert raw ticker/date records into Bronze."""
 from __future__ import annotations
 
 import json
@@ -32,7 +32,7 @@ TICKERS = [
 
 
 def download_ticker(ticker: str, period: str = "5y") -> pd.DataFrame:
-    """Download one ticker so each source record has an explicit identity."""
+    """Download one ticker so every source record has an explicit identity."""
     frame = yf.download(
         ticker, period=period, interval="1d",
         auto_adjust=False, progress=False, threads=False,
@@ -66,7 +66,7 @@ def ingest(period: str = "5y") -> int:
         raise RuntimeError("Ingestion produced no valid market records.")
 
     sql = """
-        INSERT INTO bronze.stock_raw
+        INSERT INTO bronze.stock_raw_daily
             (ticker, market_date, ingestion_timestamp, data)
         VALUES %s
         ON CONFLICT (ticker, market_date) DO UPDATE SET
@@ -76,7 +76,7 @@ def ingest(period: str = "5y") -> int:
     with psycopg2.connect(**config.psycopg2_kwargs) as conn:
         with conn.cursor() as cur:
             execute_values(cur, sql, rows, page_size=1000)
-    logger.info("Ingested %d ticker-date records", len(rows))
+    logger.info("Upserted %d ticker-date records into Bronze", len(rows))
     return len(rows)
 
 
