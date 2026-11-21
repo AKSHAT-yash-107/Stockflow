@@ -1,10 +1,8 @@
-"""Centralized configuration for Stockflow.
-
-Secrets are loaded from environment variables. Copy .env.example to .env
-for local development; never commit the populated .env file.
-"""
+"""Centralized environment-backed configuration for Stockflow."""
 import os
 from dataclasses import dataclass
+
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -17,6 +15,8 @@ class DatabaseConfig:
 
     @classmethod
     def from_env(cls) -> "DatabaseConfig":
+        # Load local .env values without overriding explicitly exported variables.
+        load_dotenv()
         required = ("PGHOST", "PGDATABASE", "PGUSER", "PGPASSWORD")
         missing = [key for key in required if not os.getenv(key)]
         if missing:
@@ -30,18 +30,6 @@ class DatabaseConfig:
             user=os.environ["PGUSER"],
             password=os.environ["PGPASSWORD"],
         )
-
-    @property
-    def sqlalchemy_url(self) -> str:
-        from sqlalchemy.engine import URL
-        return URL.create(
-            "postgresql+psycopg2",
-            username=self.user,
-            password=self.password,
-            host=self.host,
-            port=self.port,
-            database=self.database,
-        ).render_as_string(hide_password=False)
 
     @property
     def psycopg2_kwargs(self) -> dict:
