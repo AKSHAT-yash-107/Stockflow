@@ -1,6 +1,7 @@
 """Validation helpers shared by Stockflow pipeline stages."""
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 PRICE_COLUMNS = ("Open", "High", "Low", "Close")
@@ -20,6 +21,8 @@ def validate_market_frame(frame: pd.DataFrame) -> pd.DataFrame:
             result[column] = pd.to_numeric(result[column], errors="coerce")
 
     result = result.dropna(subset=list(PRICE_COLUMNS))
+    finite_prices = np.isfinite(result[list(PRICE_COLUMNS)]).all(axis=1)
+    result = result.loc[finite_prices]
     result = result[(result["Open"] > 0) & (result["High"] > 0) &
                     (result["Low"] > 0) & (result["Close"] > 0)]
     invalid_ohlc = (
@@ -30,8 +33,8 @@ def validate_market_frame(frame: pd.DataFrame) -> pd.DataFrame:
     result = result.loc[~invalid_ohlc]
     if "Volume" in result.columns:
         result = result.dropna(subset=["Volume"])
-        result = result[result["Volume"] >= 0]
-        result = result[result["Volume"] % 1 == 0]
+        result = result[np.isfinite(result["Volume"])]
+        result = result[(result["Volume"] >= 0) & (result["Volume"] % 1 == 0)]
         result["Volume"] = result["Volume"].astype("int64")
     return result
 
