@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import psycopg2
 from psycopg2.extras import execute_values
@@ -21,7 +22,7 @@ def transform() -> int:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT ticker, market_date, data, ingestion_timestamp
-                FROM bronze.stock_raw
+                FROM bronze.stock_raw_daily
                 ORDER BY market_date, ticker
             """)
             source = cur.fetchall()
@@ -42,6 +43,9 @@ def transform() -> int:
             if not raw_volume.is_integer():
                 raise ValueError("Volume must be an integer")
             volume = int(raw_volume)
+            if not all(math.isfinite(value) for value in
+                       (open_price, high, low, close, raw_volume)):
+                raise ValueError("OHLCV values must be finite")
         except (KeyError, TypeError, ValueError, OverflowError):
             rejected += 1
             continue
