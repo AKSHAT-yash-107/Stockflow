@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -22,6 +23,7 @@ def test_valid_market_rows_are_retained():
         {"Open": 100, "High": 90, "Low": 95, "Close": 85, "Volume": 1000},
         {"Open": 100, "High": 112, "Low": 98, "Close": 110, "Volume": -1},
         {"Open": 100, "High": 112, "Low": 98, "Close": 110, "Volume": 1.5},
+        {"Open": 100, "High": np.inf, "Low": 98, "Close": 110, "Volume": 1000},
     ],
 )
 def test_invalid_market_rows_are_removed(row):
