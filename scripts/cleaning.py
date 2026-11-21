@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 
-import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -32,18 +31,26 @@ def transform() -> int:
         return 0
 
     rows = []
+    rejected = 0
     for ticker, market_date, payload, ingestion_ts in source:
         payload = payload if isinstance(payload, dict) else {}
         try:
-            values = [
+            open_price, high, low, close = (
                 float(payload[name]) for name in ("Open", "High", "Low", "Close")
-            ]
-            volume = int(float(payload["Volume"]))
+            )
+            raw_volume = float(payload["Volume"])
+            if not raw_volume.is_integer():
+                raise ValueError("Volume must be an integer")
+            volume = int(raw_volume)
         except (KeyError, TypeError, ValueError, OverflowError):
+            rejected += 1
             continue
-        open_price, high, low, close = values
-        if (min(values) <= 0 or volume < 0 or high < max(open_price, close, low)
-                or low > min(open_price, close, high)):
+
+        if (min(open_price, high, low, close) <= 0 or volume < 0
+                or high < max(open_price, close)
+                or low > min(open_price, close)
+                or high < low):
+            rejected += 1
             continue
         rows.append((
             market_date, ticker, open_price, high, low, close,
@@ -51,7 +58,9 @@ def transform() -> int:
         ))
 
     if not rows:
-        raise RuntimeError("No valid Bronze records found; refusing to replace Silver.")
+        raise RuntimeError(
+            "No valid Bronze records found; refusing to modify Silver."
+        )
 
     upsert = """
         INSERT INTO silver.stock_clean
@@ -65,7 +74,10 @@ def transform() -> int:
     with psycopg2.connect(**config.psycopg2_kwargs) as conn:
         with conn.cursor() as cur:
             execute_values(cur, upsert, rows, page_size=1000)
-    logger.info("Upserted %d valid Silver rows", len(rows))
+    logger.info(
+        "Upserted %d Silver rows; rejected %d invalid Bronze rows",
+        len(rows), rejected,
+    )
     return len(rows)
 
 
