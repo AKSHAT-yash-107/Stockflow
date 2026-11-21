@@ -9,12 +9,16 @@ CREATE TABLE IF NOT EXISTS silver.stock_clean (
     close DOUBLE PRECISION NOT NULL CHECK (close > 0),
     volume BIGINT NOT NULL CHECK (volume >= 0),
     ingestion_timestamp TIMESTAMPTZ NOT NULL,
-    CONSTRAINT stock_clean_date_ticker_pk PRIMARY KEY (date, ticker),
     CONSTRAINT stock_clean_ohlc_valid CHECK (
         high >= GREATEST(open, close, low)
         AND low <= LEAST(open, close, high)
     )
 );
+
+-- Unique index also supports ON CONFLICT for databases created with the
+-- earlier project schema, which did not declare a primary key.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_stock_clean_date_ticker
+    ON silver.stock_clean (date, ticker);
 
 CREATE INDEX IF NOT EXISTS idx_stock_clean_ticker_date
     ON silver.stock_clean (ticker, date);
