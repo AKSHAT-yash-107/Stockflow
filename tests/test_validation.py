@@ -14,12 +14,18 @@ def test_valid_market_rows_are_retained():
     assert result.iloc[0]["Volume"] == 1000
 
 
-def test_invalid_ohlc_row_is_removed():
-    frame = pd.DataFrame({
-        "Open": [100.0], "High": [105.0], "Low": [98.0],
-        "Close": [110.0], "Volume": [1000],
-    })
-    assert validate_market_frame(frame).empty
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"Open": 100, "High": 105, "Low": 98, "Close": 110, "Volume": 1000},
+        {"Open": 100, "High": 112, "Low": 105, "Close": 110, "Volume": 1000},
+        {"Open": 100, "High": 90, "Low": 95, "Close": 85, "Volume": 1000},
+        {"Open": 100, "High": 112, "Low": 98, "Close": 110, "Volume": -1},
+        {"Open": 100, "High": 112, "Low": 98, "Close": 110, "Volume": 1.5},
+    ],
+)
+def test_invalid_market_rows_are_removed(row):
+    assert validate_market_frame(pd.DataFrame([row])).empty
 
 
 def test_missing_required_column_fails():
