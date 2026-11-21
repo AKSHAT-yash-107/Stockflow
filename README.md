@@ -11,10 +11,10 @@ Yahoo Finance
 Python ingestion (one ticker at a time)
      |
      v
-Bronze: raw JSONB records
+Bronze: raw JSONB records (ticker/date grain)
      |
      v
-Validation + normalization
+OHLCV validation + normalization
      |
      v
 Silver: one validated row per ticker/date
@@ -23,20 +23,18 @@ Silver: one validated row per ticker/date
 PostgreSQL window-function transformations
      |
      v
-Gold: returns + rolling averages
+Gold: daily returns + rolling averages
      |
      v
 Power BI
 ```
-
-The design uses a composite ticker/date key in each layer. Re-running ingestion or transformations updates the corresponding business key rather than creating duplicate records.
 
 ## Implemented engineering capabilities
 
 - Python ingestion using yfinance.
 - PostgreSQL Bronze/Silver/Gold layers.
 - JSONB raw-record preservation.
-- OHLCV validation and invalid-row rejection.
+- OHLCV validation (positive finite prices, consistent high/low, non-negative integer volume).
 - Idempotent upserts keyed by ticker and market date.
 - Gold daily returns and 7-/30-observation simple moving averages using PostgreSQL window functions.
 - Environment-based database configuration; credentials are not stored in source code.
@@ -44,7 +42,7 @@ The design uses a composite ticker/date key in each layer. Re-running ingestion 
 
 ## Technology
 
-Python, PostgreSQL, pandas, yfinance, psycopg2, python-dotenv, pytest, Power BI.
+Python, PostgreSQL, pandas, NumPy, yfinance, psycopg2, python-dotenv, pytest, Power BI.
 
 ## Repository layout
 
@@ -96,6 +94,8 @@ requirements.txt
    psql -d stockflow -f sql/Gold_schema.sql
    ```
 
+   The new per-ticker Bronze table is `bronze.stock_raw_daily`. An existing legacy `bronze.stock_raw` table is left intact. Silver and Gold use unique ticker/date indexes so upserts also work with the original table definitions. If an older Silver or Gold table contains duplicate ticker/date pairs, inspect and reconcile those duplicates before creating the unique indexes; the schema scripts intentionally do not delete user data.
+
 6. Run each stage from the repository root:
 
    ```bash
@@ -113,15 +113,15 @@ requirements.txt
 ## Data quality and reruns
 
 - Empty downloads do not silently replace existing datasets.
-- OHLC values must be positive and satisfy high/low consistency.
-- Volume must be a non-negative integer.
-- The ticker/date primary key prevents duplicate business records.
+- Invalid or non-finite OHLCV values are rejected.
+- The ticker/date unique indexes prevent duplicate business records.
 - Upserts make repeated stage execution safe for the same business key.
 - Bronze retains the latest raw payload per ticker/date; it is not an immutable ingestion-event archive.
+- Gold currently recomputes and upserts all records from Silver on each run.
 
 ## Analytical outputs
 
-Gold currently includes daily percentage return and 7-/30-observation simple moving averages. The SQL analytics file contains additional return, volatility and market-correlation analyses. Moving averages use trading observations, not calendar-day windows.
+Gold includes daily percentage return and 7-/30-observation simple moving averages. The SQL analytics file contains additional total-return, volatility and market-correlation analyses. Moving averages use trading observations, not calendar-day windows.
 
 ## Scope and limitations
 
