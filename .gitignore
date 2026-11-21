@@ -1,5 +1,11 @@
 __pycache__/
+*.py[cod]
+.venv/
 venv/
 .idea/
+.vscode/
 .env
-*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
