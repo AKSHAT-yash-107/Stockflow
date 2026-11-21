@@ -1,4 +1,6 @@
-yfinance
-pandas
-psycopg2-binary
-sqlalchemy
+pandas>=2.0,<3.0
+numpy>=1.24,<3.0
+yfinance>=0.2.40
+psycopg2-binary>=2.9,<3.0
+python-dotenv>=1.0,<2.0
+pytest>=8.0,<9.0

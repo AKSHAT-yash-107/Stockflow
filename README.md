@@ -1,145 +1,136 @@
 # Stockflow — Stock Market Data Warehouse & Analytics Platform
 
-## Why I Built This
-
-Most stock datasets available online are either raw CSVs or isolated 
-dashboards. I wanted to design a layered analytical pipeline that could 
-ingest raw market data, clean and normalize it, generate business-ready 
-metrics like returns, volatility, and market correlation, and finally 
-expose those insights through a BI dashboard.
-
-The project simulates how financial analytics systems process and transform 
-market data into decision-support systems for analysts and investors.
-
----
+Stockflow is a batch data-engineering project that ingests historical NSE equity data, preserves source records in a Bronze layer, validates and normalizes OHLCV records into Silver, and builds analytical Gold metrics in PostgreSQL.
 
 ## Architecture
 
-![Architecture](docs/architecture.png)
+```text
+Yahoo Finance
+     |
+     v
+Python ingestion (one ticker at a time)
+     |
+     v
+Bronze: raw JSONB records (ticker/date grain)
+     |
+     v
+OHLCV validation + normalization
+     |
+     v
+Silver: one validated row per ticker/date
+     |
+     v
+PostgreSQL window-function transformations
+     |
+     v
+Gold: daily returns + rolling averages
+     |
+     v
+Power BI
+```
 
----
+## Implemented engineering capabilities
 
-## Tech Stack
+- Python ingestion using yfinance.
+- PostgreSQL Bronze/Silver/Gold layers.
+- JSONB raw-record preservation.
+- OHLCV validation (positive finite prices, consistent high/low, non-negative integer volume).
+- Idempotent upserts keyed by ticker and market date.
+- Gold daily returns and 7-/30-observation simple moving averages using PostgreSQL window functions.
+- Environment-based database configuration; credentials are not stored in source code.
+- Unit tests for validation and transformation invariants.
 
-| Category         | Technology              |
-|------------------|-------------------------|
-| Language         | Python                  |
-| Database         | PostgreSQL              |
-| Data Processing  | Pandas                  |
-| SQL Analytics    | PostgreSQL SQL          |
-| Visualization    | Power BI                |
-| API Source       | Yahoo Finance (yfinance)|
+## Dataset scope
 
----
+The ingestion script currently defines 17 NSE tickers and requests a five-year daily history. The actual row count and date coverage depend on the source response at run time.
 
-## Pipeline
-Yahoo Finance API
-→ ingest.py        (Bronze layer)
-→ cleaning.py      (Silver layer)
-→ gold.py          (Gold layer)
-→ SQL Analytics
-→ Power BI Dashboard
+## Technology
 
----
+Python, PostgreSQL, pandas, NumPy, yfinance, psycopg2, python-dotenv, pytest, Power BI.
 
-## Medallion Architecture
+## Repository layout
 
-### Bronze Layer — Raw Preservation
-Stores raw JSON market data from Yahoo Finance exactly as received.
+```text
+scripts/
+  config.py          # environment-backed database config
+  ingest.py          # source ingestion -> Bronze
+  validation.py      # reusable OHLCV checks
+  cleaning.py        # Bronze -> Silver
+  gol_metrics.py     # Silver -> Gold
+sql/
+  Bronze_schema.sql
+  Silver_Schema.sql
+  Gold_schema.sql
+  gold_analytical_deductions.sql
+tests/
+  test_validation.py
+  test_metrics_sql.py
+docs/
+  architecture.png
+.env.example
+requirements.txt
+```
 
-**Why JSONB and not a normal table?**
-The Yahoo Finance API returns semi-structured data that may evolve over 
-time. By storing raw payloads in JSONB, I preserved the original source 
-data exactly as received, which improves traceability, auditability, and 
-schema flexibility. This separation reduces ingestion fragility because 
-schema changes from the API are less likely to break the Bronze layer.
+## Setup
 
-### Silver Layer — Cleaning and Normalization
-Cleans and normalizes OHLCV stock data into one row per stock per date.
+1. Install PostgreSQL and create a database named `stockflow`.
+2. Create and activate a virtual environment:
 
-**The hardest problem in this project:**
-The Yahoo Finance data arrived in wide format where each stock had 
-separate columns for Open, High, Low, Close, and Volume. I had to flatten 
-multi-index columns, melt the dataset into a row-based structure, and 
-handle null values and type conversions — all before the data was 
-analytics-ready.
+   ```bash
+   python -m venv .venv
+   # Windows PowerShell: .venv\Scripts\Activate.ps1
+   # macOS/Linux: source .venv/bin/activate
+   ```
 
-### Gold Layer — Business Metrics
-Generates analytical metrics using SQL window functions.
+3. Install dependencies:
 
-**Metrics computed:**
-- Daily return %
-- 7-day and 30-day simple moving averages
-- Volatility (standard deviation of returns)
-- Market correlation
-- Anomaly detection via Z-score
+   ```bash
+   pip install -r requirements.txt
+   ```
 
----
+4. Copy `.env.example` to `.env` and set your local PostgreSQL credentials. Do not commit `.env`.
 
-## Anomaly Detection
+5. Create the schemas and tables in order:
 
-Anomalies represent unusual deviations from normal market behavior — 
-sudden spikes or drops in returns that may indicate earnings announcements, 
-macroeconomic news, panic selling, or momentum breakouts.
+   ```bash
+   psql -d stockflow -f sql/Bronze_schema.sql
+   psql -d stockflow -f sql/Silver_Schema.sql
+   psql -d stockflow -f sql/Gold_schema.sql
+   ```
 
-**Method:** Z-score on daily returns per ticker. Any day where 
-zscore > 3 or zscore < -3 is flagged as anomalous.
+   The new per-ticker Bronze table is `bronze.stock_raw_daily`. An existing legacy `bronze.stock_raw` table is left intact. Silver and Gold use unique ticker/date indexes so upserts also work with the original table definitions. If an older Silver or Gold table contains duplicate ticker/date pairs, inspect and reconcile those duplicates before creating the unique indexes; the schema scripts intentionally do not delete user data.
 
-**Finding:** 258 anomaly days detected across 17 stocks over 5 years.
-Highest: ICICIBANK.NS moved 10.85% in a single day (zscore: 8.34).
+6. Run each stage from the repository root:
 
----
+   ```bash
+   python -m scripts.ingest
+   python -m scripts.cleaning
+   python -m scripts.gol_metrics
+   ```
 
-## Key Numbers
+7. Run unit tests:
 
-| Metric | Value |
-|--------|-------|
-| Stocks tracked | 17 NSE stocks |
-| Time period | 5 years |
-| Silver rows |  21029 |
-| Anomaly days detected | 258 |
-| Gold metrics computed | Daily return, SMA7, SMA30, Volatility, Correlation |
+   ```bash
+   python -m pytest -q
+   ```
 
----
+## Data quality and reruns
+
+- Empty downloads do not silently replace existing datasets.
+- Invalid or non-finite OHLCV values are rejected.
+- The ticker/date unique indexes prevent duplicate business records.
+- Upserts make repeated stage execution safe for the same business key.
+- Bronze retains the latest raw payload per ticker/date; it is not an immutable ingestion-event archive.
+- Gold currently recomputes and upserts all records from Silver on each run.
+
+## Analytical outputs
+
+Gold includes daily percentage return and 7-/30-observation simple moving averages. The SQL analytics file contains additional total-return, volatility and market-correlation analyses. Moving averages use trading observations, not calendar-day windows.
+
+## Scope and limitations
+
+This is a batch historical-data pipeline, not a real-time streaming or distributed processing system. Airflow, dbt, Kafka, Spark and AWS integrations are not claimed as implemented in the current repository. Validate source availability and licensing before production use.
 
 ## Dashboard
 
-### Risk vs Return Analysis
-![Dashboard](dashboard/powerbi_screenshots/scatter_plot.png)
-
----
-
-## How To Run
-
-```bash
-# 1. Install dependencies
-pip install yfinance pandas psycopg2 sqlalchemy
-
-# 2. Set up PostgreSQL and create schemas
-psql -f sql/schema.sql
-
-# 3. Run the pipeline
-python scripts/ingest.py
-python scripts/cleaning.py
-python scripts/gold.py
-```
-
----
-
-## Future Improvements
-
-**Apache Airflow** — currently the pipeline runs manually script by 
-script. Airflow would automate scheduling, manage task dependencies 
-(Gold only runs after Silver completes), and provide monitoring and 
-retry handling through DAGs.
-
-**dbt** — replace raw SQL transformations with tested, documented, 
-version-controlled dbt models.
-
-**Kafka** — replace batch ingestion with real-time streaming for 
-live market data.
-
-**Docker** — containerize the full pipeline for reproducible deployment.
-
-**Cloud (AWS/GCP)** — migrate warehouse to Redshift or BigQuery 
-for scalability.
+The Power BI report is maintained separately and is not currently included in this GitHub repository. Add a dashboard screenshot under `docs/` when publishing a shareable preview.
