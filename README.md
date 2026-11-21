@@ -40,6 +40,10 @@ Power BI
 - Environment-based database configuration; credentials are not stored in source code.
 - Unit tests for validation and transformation invariants.
 
+## Dataset scope
+
+The ingestion script currently defines 17 NSE tickers and requests a five-year daily history. The actual row count and date coverage depend on the source response at run time.
+
 ## Technology
 
 Python, PostgreSQL, pandas, NumPy, yfinance, psycopg2, python-dotenv, pytest, Power BI.
@@ -129,4 +133,4 @@ This is a batch historical-data pipeline, not a real-time streaming or distribut
 
 ## Dashboard
 
-See the Power BI dashboard assets in the repository, where available.
+The Power BI report is maintained separately and is not currently included in this GitHub repository. Add a dashboard screenshot under `docs/` when publishing a shareable preview.
