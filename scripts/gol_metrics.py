@@ -1,99 +1,59 @@
-import pandas as pd
-import psycopg2 as pg
-from sqlalchemy import create_engine
+"""Build analytical Gold metrics from Silver using PostgreSQL window functions."""
+from __future__ import annotations
 
-# -----------------------------
-# CONNECT TO POSTGRESQL
-# -----------------------------
+import logging
 
-conn = pg.connect(
-    dbname="stockflow",
-    host="localhost",
-    user="postgres",
-    password="123",
-    port="5432"
-)
+import psycopg2
 
-# -----------------------------
-# READ SILVER LAYER
-# -----------------------------
+try:
+    from scripts.config import DatabaseConfig
+except ModuleNotFoundError:
+    from config import DatabaseConfig
 
-df = pd.read_sql(
-    "SELECT * FROM silver.stock_clean",
-    conn
-)
-df.columns = df.columns.str.lower()
-# -----------------------------
-# SORT DATA
-# VERY IMPORTANT
-# -----------------------------
-df=df.sort_values(['ticker', 'date'])
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
-# -----------------------------
-# DAILY RETURN %
-# -----------------------------
+GOLD_SQL = """
+    INSERT INTO gold.stock_metrics
+        (date, ticker, close, daily_return_pct, sma_7, sma_30, volume)
+    SELECT
+        date, ticker, close,
+        ROUND((close / NULLIF(LAG(close) OVER w, 0) - 1)::numeric * 100, 2),
+        ROUND(AVG(close) OVER (
+            PARTITION BY ticker ORDER BY date
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        )::numeric, 2),
+        ROUND(AVG(close) OVER (
+            PARTITION BY ticker ORDER BY date
+            ROWS BETWEEN 29 PRECEDING AND CURRENT ROW
+        )::numeric, 2),
+        volume
+    FROM silver.stock_clean
+    WINDOW w AS (PARTITION BY ticker ORDER BY date)
+    ON CONFLICT (date, ticker) DO UPDATE SET
+        close = EXCLUDED.close,
+        daily_return_pct = EXCLUDED.daily_return_pct,
+        sma_7 = EXCLUDED.sma_7,
+        sma_30 = EXCLUDED.sma_30,
+        volume = EXCLUDED.volume
+"""
 
-df['daily_return_pct'] = (
-    df.groupby('ticker')['close']
-      .pct_change() * 100
-)
 
-# -----------------------------
-# 7-DAY SIMPLE MOVING AVERAGE
-# -----------------------------
+def build_gold() -> int:
+    config = DatabaseConfig.from_env()
+    with psycopg2.connect(**config.psycopg2_kwargs) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM silver.stock_clean")
+            source_count = cur.fetchone()[0]
+            if source_count == 0:
+                raise RuntimeError("Silver is empty; refusing to build Gold.")
+            cur.execute(GOLD_SQL)
+            cur.execute("SELECT COUNT(*) FROM gold.stock_metrics")
+            gold_count = cur.fetchone()[0]
+    logger.info("Gold contains %d rows after processing %d Silver rows",
+                gold_count, source_count)
+    return gold_count
 
-df['sma_7'] = (
-    df.groupby('ticker')['close']
-      .transform(lambda x: x.rolling(7).mean())
-)
 
-# -----------------------------
-# 30-DAY SIMPLE MOVING AVERAGE
-# -----------------------------
-
-df['sma_30'] = (
-    df.groupby('ticker')['close']
-      .transform(lambda x: x.rolling(30).mean())
-)
-
-# -----------------------------
-# ROUND VALUES
-# -----------------------------
-
-df['daily_return_pct'] = df['daily_return_pct'].round(2)
-df['sma_7'] = df['sma_7'].round(2)
-df['sma_30'] = df['sma_30'].round(2)
-
-# -----------------------------
-# CHECK OUTPUT
-# -----------------------------
-
-print(df.head(20))
-
-# -----------------------------
-# CREATE SQLALCHEMY ENGINE
-# -----------------------------
-
-engine = create_engine(
-    "postgresql://postgres:123@localhost:5432/stockflow"
-)
-
-# -----------------------------
-# LOAD INTO GOLD LAYER
-# -----------------------------
-
-df.to_sql(
-    name='stock_metrics',
-    con=engine,
-    schema='gold',
-    if_exists='replace',
-    index=False
-)
-
-# -----------------------------
-# CLOSE CONNECTION
-# -----------------------------
-
-conn.close()
-
-print("Gold layer created successfully.")
+if __name__ == "__main__":
+    build_gold()
