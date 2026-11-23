@@ -157,3 +157,19 @@ def test_transient_conflict_is_left_for_airflow_retry():
             bucket="stockflow-lake",
             batch=make_batch(),
         )
+
+
+def test_schema_version_is_consistent_in_body_and_object_metadata():
+    batch = build_bronze_batch(
+        ticker="RELIANCE.NS",
+        records=sample_records(),
+        run_id="run-schema-v2",
+        ingest_date=date(2026, 11, 23),
+        captured_at=CAPTURED_AT,
+        schema_version=2,
+    )
+    envelope = json.loads(batch.body.decode().splitlines()[0])
+    assert envelope["schema_version"] == 2
+    s3 = Mock()
+    upload_bronze_batch(s3_client=s3, bucket="stockflow-lake", batch=batch)
+    assert s3.put_object.call_args.kwargs["Metadata"]["schema-version"] == "2"
