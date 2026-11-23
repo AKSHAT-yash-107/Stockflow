@@ -19,6 +19,7 @@ from uuid import UUID
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
 
 
 TICKER_PATTERN = re.compile(r"^[A-Z0-9&.-]+$")
@@ -179,6 +180,7 @@ def build_bronze_batch(
 
 def create_s3_client(region_name: str | None = None):
     """Create an S3 client using Boto3's default credential provider chain."""
+    load_dotenv()
     region = region_name or os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION")
     if not region:
         raise RuntimeError(
@@ -255,3 +257,38 @@ def upload_bronze_batch(
         # 409 ConditionalRequestConflict and transient failures should be
         # handled by the SDK retry policy and/or Airflow task retries.
         raise
+
+
+def upload_bronze_records(
+    *,
+    ticker: str,
+    records: Iterable[Mapping[str, Any]],
+    run_id: str,
+    ingest_date: date,
+    bucket: str | None = None,
+    region_name: str | None = None,
+    captured_at: datetime | None = None,
+    s3_client=None,
+) -> BronzeUploadResult:
+    """Build and upload one ticker batch using environment-backed settings.
+
+    Pass a reusable s3_client when uploading many tickers in one task to
+    avoid creating a new client for each ticker.
+    """
+    load_dotenv()
+    target_bucket = bucket or os.getenv("STOCKFLOW_S3_BUCKET")
+    if not target_bucket:
+        raise RuntimeError("Set STOCKFLOW_S3_BUCKET before uploading Bronze data.")
+    client = s3_client or create_s3_client(region_name=region_name)
+    batch = build_bronze_batch(
+        ticker=ticker,
+        records=records,
+        run_id=run_id,
+        ingest_date=ingest_date,
+        captured_at=captured_at,
+    )
+    return upload_bronze_batch(
+        s3_client=client,
+        bucket=target_bucket,
+        batch=batch,
+    )
