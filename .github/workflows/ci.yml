@@ -2,7 +2,7 @@ name: Stockflow CI
 
 on:
   push:
-    branches: [main, amazon-de-upgrade]
+    branches: [main, amazon-de-upgrade, stockflow-aws-daily]
   pull_request:
     branches: [main]
 
