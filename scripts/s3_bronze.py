@@ -41,6 +41,7 @@ class BronzeBatch:
     body: bytes
     sha256: str
     record_count: int
+    schema_version: int
 
 
 @dataclass(frozen=True)
@@ -123,7 +124,7 @@ def build_bronze_batch(
     complete object. An identical retry produces the same key and bytes.
     """
     ticker = ticker.strip().upper()
-    if not TICKER_PATTERN.fullmatch(ticker):
+    if not TICKER_PATTERN.fullmatch(ticker) or not any(char.isalnum() for char in ticker):
         raise ValueError(f"Invalid ticker for S3 key: {ticker!r}")
     if not run_id or not run_id.strip():
         raise ValueError("run_id is required.")
@@ -176,6 +177,7 @@ def build_bronze_batch(
         body=body,
         sha256=digest,
         record_count=len(lines),
+        schema_version=schema_version,
     )
 
 
@@ -226,7 +228,7 @@ def upload_bronze_batch(
                 "ticker": batch.ticker,
                 "run-id": RUN_ID_PATTERN.sub("_", batch.run_id)[:200],
                 "record-count": str(batch.record_count),
-                "schema-version": "1",
+                "schema-version": str(batch.schema_version),
             },
         )
         return BronzeUploadResult(
