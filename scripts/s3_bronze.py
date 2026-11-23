@@ -100,8 +100,9 @@ def _normalize_trade_date(value: Any) -> str:
     raise ValueError(f"Unsupported trade date type: {type(value).__name__}")
 
 
-def _utc_timestamp(value: datetime | None) -> str:
-    value = value or datetime.now(timezone.utc)
+def _utc_timestamp(value: datetime) -> str:
+    if value is None:
+        raise ValueError("captured_at is required for retry-stable serialization.")
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("captured_at must be timezone-aware.")
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -113,7 +114,7 @@ def build_bronze_batch(
     records: Iterable[Mapping[str, Any]],
     run_id: str,
     ingest_date: date,
-    captured_at: datetime | None = None,
+    captured_at: datetime,
     schema_version: int = 1,
 ) -> BronzeBatch:
     """Serialize a ticker batch as deterministic JSON Lines and content-address it.
