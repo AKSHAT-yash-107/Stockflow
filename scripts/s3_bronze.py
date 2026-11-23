@@ -268,7 +268,7 @@ def upload_bronze_records(
     ingest_date: date,
     bucket: str | None = None,
     region_name: str | None = None,
-    captured_at: datetime | None = None,
+    captured_at: datetime,
     s3_client=None,
 ) -> BronzeUploadResult:
     """Build and upload one ticker batch using environment-backed settings.
