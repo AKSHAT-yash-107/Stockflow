@@ -8,7 +8,7 @@ This document describes the bucket configuration expected by the S3 Bronze write
 - Keep S3 Block Public Access enabled.
 - Enable bucket versioning.
 - Enable default server-side encryption (SSE-S3 for the initial implementation; use SSE-KMS if the project requires customer-managed keys).
-- Grant the ingestion role only the required `s3:PutObject` and `s3:GetObject` permissions for the Bronze prefix; add `s3:HeadObject` access through the corresponding object-read permission.
+- Grant the ingestion role only the required `s3:PutObject` and `s3:GetObject` permissions for the Bronze prefix; add object-read access so the writer can check metadata after a conditional-write collision.
 - Do not grant the ingestion role `s3:DeleteObject`.
 - Keep bucket and object ownership bucket-owner-enforced; do not set ACLs in application code.
 - Configure lifecycle/retention deliberately after deciding how long raw market data and old versions should be retained.
@@ -23,7 +23,9 @@ The writer:
 - checks object metadata after a 412 to treat an identical retry as already complete;
 - raises a conflict if the existing key has a different digest.
 
-An identical retry has the same payload hash and key. A corrected payload has a different hash and is stored as a new object. A 409 conditional-write conflict is allowed to fail the task so Airflow can retry it.
+An identical retry has the same payload hash and key. A corrected payload has a different digest/key and is stored as a new object. A 409 conditional-write conflict is allowed to fail the task so Airflow can retry it.
+
+**The capture timestamp must be deterministic across retries.** Pass Airflow's stable `logical_date` (or another run-stable timestamp) as `captured_at`. Do not use `datetime.now()` inside a retried task to build the Bronze envelope, because that changes the serialized bytes and SHA-256 on every retry.
 
 This is application-level append-only behavior, not regulatory WORM retention. For stronger deletion/retention protection, evaluate S3 Object Lock. Object Lock requires versioning and its retention settings are difficult to reverse; do not enable it casually on a production bucket.
 
