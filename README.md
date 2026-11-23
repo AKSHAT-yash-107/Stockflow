@@ -29,6 +29,10 @@ Gold: daily returns + rolling averages
 Power BI
 ```
 
+## Ticker universe configuration
+
+The active NSE ticker universe and sector metadata are maintained in `config/tickers.csv`, not hard-coded in the ingestion code. Membership rows are effective-dated and retain source provenance so index changes can be audited. The CSV is currently a header-only template and must be populated from a verified constituent/sector source before running ingestion. See `docs/engineering/lesson-01-ticker-universe-and-data-contract.md` for the contract and rationale.
+
 ## Implemented engineering capabilities
 
 - Python ingestion using yfinance.
