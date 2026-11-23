@@ -29,11 +29,16 @@ Gold: daily returns + rolling averages
 Power BI
 ```
 
+## Ticker universe configuration
+
+The active NSE ticker universe and sector metadata are maintained in `config/tickers.csv`, not hard-coded in the ingestion code. Membership rows are effective-dated and retain source provenance so index changes can be audited. The CSV is currently a header-only template and must be populated from a verified constituent/sector source before running ingestion. See `docs/engineering/lesson-01-ticker-universe-and-data-contract.md` for the contract and rationale.
+
 ## Implemented engineering capabilities
 
 - Python ingestion using yfinance.
-- PostgreSQL Bronze/Silver/Gold layers.
-- JSONB raw-record preservation.
+- Original PostgreSQL Bronze/Silver/Gold implementation retained as the migration baseline.
+- S3 Bronze JSON Lines writer with run lineage, content-addressed object keys and conditional no-overwrite uploads.
+- Environment-backed Boto3 configuration using the standard AWS credential chain.
 - OHLCV validation (positive finite prices, consistent high/low, non-negative integer volume).
 - Idempotent upserts keyed by ticker and market date.
 - Gold daily returns and 7-/30-observation simple moving averages using PostgreSQL window functions.
@@ -46,7 +51,7 @@ The ingestion script currently defines 17 NSE tickers and requests a five-year d
 
 ## Technology
 
-Python, PostgreSQL, pandas, NumPy, yfinance, psycopg2, python-dotenv, pytest, Power BI.
+Python, Boto3, Amazon S3, PostgreSQL, pandas, NumPy, yfinance, psycopg2, python-dotenv, pytest, Power BI.
 
 ## Repository layout
 
@@ -134,3 +139,20 @@ This is a batch historical-data pipeline, not a real-time streaming or distribut
 ## Dashboard
 
 The Power BI report is maintained separately and is not currently included in this GitHub repository. Add a dashboard screenshot under `docs/` when publishing a shareable preview.
+
+
+## S3 Bronze writer (development branch)
+
+The S3 Bronze writer is implemented in `scripts/s3_bronze.py`.
+
+- One object contains one ticker's raw source records for one Airflow run.
+- Objects use JSON Lines and include `schema_version`, `source`, `ticker`, `trade_date`, `ingested_at_utc`, and `run_id`.
+- The S3 key includes ingestion date, ticker, sanitized run ID and SHA-256 content digest.
+- Uploads use `IfNoneMatch="*"` to prevent replacing an existing current object key.
+- An identical retry is treated as successful after checking the existing object's SHA-256 metadata.
+- A different payload produces a different digest/key and preserves the earlier raw object.
+- Boto3 credentials come from its standard provider chain (AWS profile, IAM Identity Center, environment credentials, or IAM role); keys are not stored in the repository.
+
+Configure `.env` from `.env.example` with `AWS_REGION` and `STOCKFLOW_S3_BUCKET`. Configure authentication separately with an AWS profile or role. The writer has mocked unit tests; a live AWS upload has not yet been run.
+
+See `infrastructure/s3/README.md` for the bucket security checklist and `docs/engineering/lesson-01-ticker-universe-and-data-contract.md` for the common market-data contract.
